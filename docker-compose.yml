@@ -14,7 +14,7 @@ services:
     build: ./backend
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/fcommerce
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/fcommerce}
     ports:
       - "3001:3001"
     volumes:

@@ -5,6 +5,7 @@ import {
   Get,
   Header,
   Headers,
+  InternalServerErrorException,
   NotFoundException,
   Param,
   Patch,
@@ -256,7 +257,8 @@ export class SellerController {
         include: { category: true, images: true },
       });
     } catch (error) {
-      if (savedImage) await unlink(savedImage.path);
+      if (savedImage?.path) await unlink(savedImage.path);
+      if (savedImage?.storagePath) await this.deleteProductImage(savedImage.storagePath);
       throw error;
     }
   }
@@ -301,10 +303,70 @@ export class SellerController {
     }
 
     const filename = `${randomUUID()}.${extension}`;
+    const storage = this.getSupabaseStorageConfig();
+    if (storage) {
+      const objectPath = `${encodeURIComponent(storage.bucket)}/${filename}`;
+      const response = await fetch(`${storage.url}/storage/v1/object/${objectPath}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${storage.serviceRoleKey}`,
+          apikey: storage.serviceRoleKey,
+          "Content-Type": expectedMimeType,
+          "x-upsert": "false",
+        },
+        body: new Uint8Array(file.buffer),
+      });
+      if (!response.ok) {
+        throw new InternalServerErrorException(
+          `Supabase Storage could not save the product image (HTTP ${response.status}).`,
+        );
+      }
+      return {
+        storagePath: objectPath,
+        url: `${storage.url}/storage/v1/object/public/${objectPath}`,
+      };
+    }
+
     const path = join(uploadsDirectory, filename);
     await mkdir(uploadsDirectory, { recursive: true });
     await writeFile(path, file.buffer, { flag: "wx" });
     return { path, url: `/api/v1/seller/product-images/${filename}` };
+  }
+
+  private getSupabaseStorageConfig() {
+    const url = process.env.SUPABASE_URL?.replace(/\/+$/, "");
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url && !serviceRoleKey) return null;
+    if (!url || !serviceRoleKey) {
+      throw new InternalServerErrorException("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must both be configured.");
+    }
+    return {
+      url,
+      serviceRoleKey,
+      bucket: process.env.SUPABASE_STORAGE_BUCKET || "product-images",
+    };
+  }
+
+  private async deleteProductImage(storagePath: string) {
+    const storage = this.getSupabaseStorageConfig();
+    if (!storage) {
+      throw new InternalServerErrorException("Supabase Storage configuration is required to remove the uploaded image.");
+    }
+    const [bucket, ...pathParts] = storagePath.split("/");
+    const response = await fetch(`${storage.url}/storage/v1/object/${encodeURIComponent(bucket)}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${storage.serviceRoleKey}`,
+        apikey: storage.serviceRoleKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prefixes: [pathParts.join("/")] }),
+    });
+    if (!response.ok) {
+      throw new InternalServerErrorException(
+        `Supabase Storage could not remove the product image (HTTP ${response.status}).`,
+      );
+    }
   }
 
   @Patch("orders/:id/confirm")

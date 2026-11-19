@@ -23,8 +23,8 @@ E-commerce marketplace based on the supplied technical architecture.
    ```
 5. Configure the database:
    ```bash
-   npm.cmd run prisma:migrate -w backend
-   npm.cmd run prisma:seed -w backend
+   npm.cmd run db:migrate
+   npm.cmd run db:seed
    ```
 6. Start the applications:
    ```bash
@@ -32,6 +32,30 @@ E-commerce marketplace based on the supplied technical architecture.
    ```
 
 Run `npm.cmd run dev` from the project root or the `frontend` folder to start both the frontend and backend together. The storefront runs at `http://localhost:3000`.
+
+## Shared cloud database (Supabase)
+
+The backend uses PostgreSQL, so every group member can share the same records by pointing their backend at the same Supabase project:
+
+1. Create a Supabase project and a **public** Storage bucket named `product-images`.
+2. In the project’s database settings, use the **session-pooler** connection string (port `5432`) for `DATABASE_URL` and `DIRECT_URL`. The direct connection may require IPv6; the transaction pooler is mainly for stateless/serverless connections.
+3. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in `.env` using the project URL and server-side secret key. Keep the key private on the backend; never put it in frontend code or commit `.env`.
+4. Set the same `JWT_SECRET` on every backend instance, then apply the schema:
+   ```powershell
+   npm.cmd run db:deploy
+   ```
+5. To preserve records from the current local PostgreSQL database, first make sure the Supabase database is empty and the migration above has succeeded. In Ubuntu/WSL, export and import the table data (this preserves user and product IDs; do not run the seed command first):
+   ```bash
+   read -rsp "Supabase direct connection URL: " DIRECT_URL; echo
+   sudo -u postgres pg_dump --data-only --no-owner --no-acl \
+     --exclude-table=public._prisma_migrations --dbname=fcommerce \
+     > /tmp/fcommerce-data.sql
+   psql "$DIRECT_URL" --set=ON_ERROR_STOP=on --file=/tmp/fcommerce-data.sql
+   ```
+   Keep the dump until you have checked the cloud data. It contains account data, so protect it and remove it when no longer needed.
+6. Back in the project folder, run `npm.cmd run storage:migrate` to copy existing local product images into the Supabase bucket and update their database URLs.
+
+Each member must configure their backend `.env` with the same `DATABASE_URL` and `JWT_SECRET`. Every backend that accepts product image uploads also needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, kept private on the server. For Docker Compose, also set `COMPOSE_DATABASE_URL` to the cloud database URL. New user accounts, products, orders, and other database records will then be shared. Product images uploaded while Supabase Storage is configured will also be shared.
 
 ## Presentation link
 
