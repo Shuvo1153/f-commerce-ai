@@ -64,6 +64,7 @@ type ProductForm = {
   categoryId: string;
   price: string;
   discountPrice: string;
+  inStock: string;
 };
 
 const emptyProduct: ProductForm = {
@@ -73,6 +74,7 @@ const emptyProduct: ProductForm = {
   categoryId: "",
   price: "",
   discountPrice: "",
+  inStock: "true",
 };
 
 function formatPrice(value: string | number) {
@@ -105,6 +107,7 @@ export default function BusinessDashboardPage() {
   const [error, setError] = useState("");
   const [savingProduct, setSavingProduct] = useState(false);
   const [confirmingOrderId, setConfirmingOrderId] = useState("");
+  const [updatingProductId, setUpdatingProductId] = useState("");
   const [productMessage, setProductMessage] = useState("");
   const [productForm, setProductForm] = useState<ProductForm>(emptyProduct);
   const [productImage, setProductImage] = useState<File | null>(null);
@@ -172,9 +175,12 @@ export default function BusinessDashboardPage() {
       });
       if (!response.ok) throw new Error(await errorMessage(response));
       await reloadDashboard();
+      const inStock = productForm.inStock === "true";
       setProductForm(emptyProduct);
       setProductImage(null);
-      setProductMessage("Product published to the storefront.");
+      setProductMessage(inStock
+        ? "Product published to the storefront."
+        : "Product added as out of stock and hidden from the storefront.");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Could not publish the product.");
     } finally {
@@ -197,6 +203,28 @@ export default function BusinessDashboardPage() {
       setError(requestError instanceof Error ? requestError.message : "Could not confirm the order.");
     } finally {
       setConfirmingOrderId("");
+    }
+  }
+
+  async function updateProductAvailability(productId: string, inStock: boolean) {
+    if (!session) return;
+    setUpdatingProductId(productId);
+    setError("");
+    try {
+      const response = await fetch(`${apiUrl}/seller/products/${productId}/availability`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ inStock }),
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      await reloadDashboard();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not update product availability.");
+    } finally {
+      setUpdatingProductId("");
     }
   }
 
@@ -285,6 +313,7 @@ export default function BusinessDashboardPage() {
                   <label>Category<select value={productForm.categoryId} onChange={(event) => setProductForm({ ...productForm, categoryId: event.target.value })} required><option value="">Choose category</option>{dashboard.categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
                   <label>Price (৳)<input type="number" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} required min="0.01" step="0.01" /></label>
                   <label>Discount price (৳)<input type="number" value={productForm.discountPrice} onChange={(event) => setProductForm({ ...productForm, discountPrice: event.target.value })} min="0.01" step="0.01" /></label>
+                  <label>Availability<select value={productForm.inStock} onChange={(event) => setProductForm({ ...productForm, inStock: event.target.value })}><option value="true">In stock</option><option value="false">Out of stock</option></select></label>
                   <label className="business-field-wide">Product image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
                     const selected = event.target.files?.[0] || null;
                     if (selected && selected.size > 5 * 1024 * 1024) {
@@ -302,7 +331,7 @@ export default function BusinessDashboardPage() {
               </section>
               <section className="business-panel">
                 <div className="business-panel-heading"><div><h2>Published products</h2><p>{dashboard.products.length} total listings</p></div></div>
-                <ProductList products={dashboard.products} />
+                <ProductList products={dashboard.products} updatingProductId={updatingProductId} onUpdateAvailability={updateProductAvailability} />
               </section>
             </div>
           )}
@@ -356,7 +385,15 @@ function OrderList({
   );
 }
 
-function ProductList({ products }: { products: Product[] }) {
+function ProductList({
+  products,
+  updatingProductId,
+  onUpdateAvailability,
+}: {
+  products: Product[];
+  updatingProductId: string;
+  onUpdateAvailability: (productId: string, inStock: boolean) => void;
+}) {
   if (products.length === 0) return <p className="business-empty">You haven’t listed any products yet.</p>;
   return (
     <ul className="business-product-list">
@@ -365,7 +402,23 @@ function ProductList({ products }: { products: Product[] }) {
           {product.images[0]?.imageUrl ? <img src={product.images[0].imageUrl} alt="" /> : <span className="business-product-placeholder">▦</span>}
           <span className="business-product-info"><strong>{product.name}</strong><small>{product.category.name} · {product.brand}</small></span>
           <span className="business-product-price">{formatPrice(product.discountPrice || product.price)}</span>
-          <span className={`business-order-status status-${product.status.toLowerCase()}`}>{product.status}</span>
+          <span className="business-product-actions">
+            <span className={`business-order-status status-${product.status.toLowerCase()}`}>
+              {product.status === "ACTIVE" ? "In stock" : product.status === "INACTIVE" ? "Out of stock" : "Draft"}
+            </span>
+            {product.status !== "DRAFT" && (
+              <button
+                className="business-stock-toggle"
+                type="button"
+                onClick={() => onUpdateAvailability(product.id, product.status !== "ACTIVE")}
+                disabled={updatingProductId === product.id}
+              >
+                {updatingProductId === product.id
+                  ? "Updating…"
+                  : product.status === "ACTIVE" ? "Mark out of stock" : "Mark in stock"}
+              </button>
+            )}
+          </span>
         </li>
       ))}
     </ul>

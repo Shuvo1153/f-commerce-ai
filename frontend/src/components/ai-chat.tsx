@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { getProductImage } from "../lib/product-catalog";
 
 const apiUrl = "/api/v1";
 
@@ -12,6 +14,8 @@ type ChatProduct = {
   price: string | number;
   discountPrice: string | number | null;
   category: { name: string };
+  imageUrl: string | null;
+  availability: "in stock" | "out of stock" | "not listed";
 };
 
 type ChatMessage = {
@@ -32,7 +36,9 @@ function isChatProduct(value: unknown): value is ChatProduct {
     typeof value.description === "string" &&
     (typeof value.price === "string" || typeof value.price === "number") &&
     (value.discountPrice === null || typeof value.discountPrice === "string" || typeof value.discountPrice === "number") &&
-    typeof value.category.name === "string";
+    typeof value.category.name === "string" &&
+    (value.imageUrl === null || typeof value.imageUrl === "string") &&
+    (value.availability === "in stock" || value.availability === "out of stock" || value.availability === "not listed");
 }
 
 function parseChatResponse(value: unknown): { reply: string; products: ChatProduct[] } | null {
@@ -56,7 +62,7 @@ function formatPrice(value: string | number) {
   return `৳${Number(value).toLocaleString("en-BD", { maximumFractionDigits: 0 })}`;
 }
 
-export default function AiChat({ accessToken }: { accessToken: string }) {
+export default function AiChat() {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -88,7 +94,6 @@ export default function AiChat({ accessToken }: { accessToken: string }) {
       const response = await fetch(`${apiUrl}/ai/chat`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ message, history }),
@@ -100,6 +105,7 @@ export default function AiChat({ accessToken }: { accessToken: string }) {
       setMessages((current) => [...current, { role: "assistant", content: result.reply, products: result.products }]);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The assistant couldn’t respond. Please try again.");
+      setInput((current) => current.trim() ? current : message);
     } finally {
       setIsSending(false);
     }
@@ -124,16 +130,23 @@ export default function AiChat({ accessToken }: { accessToken: string }) {
                 <p>{item.content}</p>
                 {item.products && item.products.length > 0 && (
                   <div className="ai-chat-products">
-                    {item.products.map((product) => (
-                      <article className="ai-chat-product" key={product.id}>
-                        <div>
-                          <span>{product.category.name} · {product.brand}</span>
-                          <strong>{product.name}</strong>
-                          <small>{formatPrice(product.discountPrice || product.price)}</small>
-                        </div>
-                        <a href={`#product-${product.id}`} onClick={() => setIsOpen(false)}>View in store ↗</a>
-                      </article>
-                    ))}
+                    {item.products.map((product) => {
+                      const imageUrl = product.imageUrl || getProductImage(product);
+                      return (
+                        <article className="ai-chat-product" key={product.id}>
+                          <div className="ai-chat-product-main">
+                            <img src={imageUrl} alt={product.name} loading="lazy" />
+                            <div>
+                              <span>{product.category.name} · {product.brand}</span>
+                              <strong>{product.name}</strong>
+                              <small>{formatPrice(product.discountPrice ?? product.price)}</small>
+                              {product.availability !== "not listed" && <small>{product.availability}</small>}
+                            </div>
+                          </div>
+                          <Link href={`/products/${product.id}`} onClick={() => setIsOpen(false)}>View product ↗</Link>
+                        </article>
+                      );
+                    })}
                   </div>
                 )}
               </div>

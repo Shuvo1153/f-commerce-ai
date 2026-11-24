@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from "@nestjs/common";
+import { Controller, Get, NotFoundException, Param, Query } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 
 @Controller("products")
@@ -8,28 +8,43 @@ export class ProductController {
   @Get()
   list(@Query("search") search?: string) {
     return this.prisma.product.findMany({
-      where: search ? { name: { contains: search, mode: "insensitive" }, status: "ACTIVE" } : { status: "ACTIVE" },
+      where: search
+        ? {
+          status: "ACTIVE",
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { brand: { contains: search, mode: "insensitive" } },
+          ],
+        }
+        : { status: "ACTIVE" },
+      orderBy: { createdAt: "desc" },
       include: {
         images: true,
         variants: true,
         category: true,
         seller: { select: { businessName: true } },
       },
-      take: 50,
     });
   }
 
   @Get(":id")
   async detail(@Param("id") id: string) {
-    return this.prisma.product.findUnique({
-      where: { id },
+    const product = await this.prisma.product.findFirst({
+      where: { id, status: "ACTIVE" },
       include: {
-        images: true,
-        variants: true,
-        category: true,
+        images: { orderBy: { sortOrder: "asc" } },
+        variants: {
+          select: { id: true, variantName: true, variantValue: true, priceAdjustment: true, stockQuantity: true },
+        },
+        category: { select: { name: true, slug: true } },
         seller: { select: { businessName: true } },
-        reviews: true,
+        reviews: {
+          select: { id: true, rating: true, comment: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        },
       },
     });
+    if (!product) throw new NotFoundException("Product not found.");
+    return product;
   }
 }

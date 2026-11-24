@@ -233,6 +233,10 @@ export class SellerController {
     const price = parsePrice(body.price, "Price");
     const discountPrice = body.discountPrice === undefined || body.discountPrice === null ||
       body.discountPrice === "" ? null : parsePrice(body.discountPrice, "Discount price");
+    const inStock = body.inStock === undefined ? "true" : body.inStock;
+    if (inStock !== "true" && inStock !== "false") {
+      throw new BadRequestException("Choose whether the product is in stock.");
+    }
     if (discountPrice && discountPrice.gte(price)) {
       throw new BadRequestException("Discount price must be less than the regular price.");
     }
@@ -251,7 +255,7 @@ export class SellerController {
           description,
           price,
           discountPrice,
-          status: "ACTIVE",
+          status: inStock === "true" ? "ACTIVE" : "INACTIVE",
           ...(savedImage ? { images: { create: { imageUrl: savedImage.url, isPrimary: true } } } : {}),
         },
         include: { category: true, images: true },
@@ -261,6 +265,44 @@ export class SellerController {
       if (savedImage?.storagePath) await this.deleteProductImage(savedImage.storagePath);
       throw error;
     }
+  }
+
+  @Patch("products/:id/availability")
+  async updateProductAvailability(
+    @Headers("authorization") authorization: string | undefined,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const userId = getUserIdFromAuthorization(authorization);
+    if (!isRecord(body) || typeof body.inStock !== "boolean") {
+      throw new BadRequestException("Choose whether the product is in stock.");
+    }
+
+    const seller = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      select: { id: true, verificationStatus: true },
+    });
+    if (!seller || seller.verificationStatus !== "VERIFIED") {
+      throw new ConflictException("An active business profile is required to update product availability.");
+    }
+
+    const product = await this.prisma.product.findFirst({
+      where: { id, sellerId: seller.id },
+      select: { id: true, status: true },
+    });
+    if (!product) throw new NotFoundException("Product not found for this business.");
+    if (product.status === "DRAFT") {
+      throw new ConflictException("Draft products cannot be marked in stock or out of stock.");
+    }
+
+    const status = body.inStock ? "ACTIVE" : "INACTIVE";
+    if (product.status === status) return product;
+
+    return this.prisma.product.update({
+      where: { id: product.id },
+      data: { status },
+      select: { id: true, status: true },
+    });
   }
 
   @Get("product-images/:filename")

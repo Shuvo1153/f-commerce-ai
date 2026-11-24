@@ -1,34 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AiChat from "../components/ai-chat";
+import { CatalogProduct, formatPrice, getProductImage, productPhotos } from "../lib/product-catalog";
 
 const apiUrl = "/api/v1";
-const productPhotos: Record<string, string> = {
-  Samsung: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=900&q=85",
-  Sony: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=900&q=85",
-  Apple: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=900&q=85",
-  Shirts: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=85",
-  Pants: "https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=900&q=85",
-  Sneakers: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=85",
-  Perfumes: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=900&q=85",
-  "Women's Collection": "https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=900&q=85",
-  Bags: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=900&q=85",
-};
 const categoryOrder = ["Electronics", "Shirts", "Pants", "Sneakers", "Perfumes", "Women's Collection", "Bags"];
-
-type Product = {
-  id: string;
-  name: string;
-  brand: string;
-  description: string;
-  price: string | number;
-  discountPrice: string | number | null;
-  category?: { name: string } | null;
-  seller?: { businessName: string } | null;
-  images?: { imageUrl: string; isPrimary: boolean; sortOrder: number }[];
-};
 
 type Cart = Record<string, number>;
 
@@ -53,10 +32,6 @@ type Session = {
   user: { id: string; name: string; email: string };
 };
 
-function formatPrice(value: string | number) {
-  return `৳${Number(value).toLocaleString("en-BD", { maximumFractionDigits: 0 })}`;
-}
-
 function readCart(): Cart {
   try {
     const stored: unknown = JSON.parse(localStorage.getItem("fcommerce.cart") || "{}");
@@ -70,16 +45,27 @@ function readCart(): Cart {
   }
 }
 
+function isAiSearchResponse(value: unknown): value is { productIds: string[]; source?: "ai" | "catalog" } {
+  return typeof value === "object" && value !== null &&
+    "productIds" in value && Array.isArray(value.productIds) &&
+    value.productIds.every((id) => typeof id === "string") &&
+    (!("source" in value) || value.source === "ai" || value.source === "catalog");
+}
+
 export default function Home() {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [aiSearchResultIds, setAiSearchResultIds] = useState<string[] | null>(null);
+  const [aiSearchLoading, setAiSearchLoading] = useState(false);
+  const [aiSearchNotice, setAiSearchNotice] = useState("");
   const [category, setCategory] = useState("All");
   const [cart, setCart] = useState<Cart>({});
   const [cartOpen, setCartOpen] = useState(false);
+  const [cartToast, setCartToast] = useState<{ id: number; productName: string } | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
@@ -95,36 +81,33 @@ export default function Home() {
     postalCode: "",
     country: "Bangladesh",
   });
+  const searchRequestId = useRef(0);
+  const cartToastId = useRef(0);
 
   useEffect(() => {
+    setCart(readCart());
     const stored = localStorage.getItem("fcommerce.session");
-    if (!stored) {
-      router.replace("/login");
-      return;
-    }
-
-    try {
-      const currentSession = JSON.parse(stored) as Session;
-      if (!currentSession.accessToken || !currentSession.user?.id) {
-        throw new Error("Session is incomplete.");
+    if (stored) {
+      try {
+        const currentSession = JSON.parse(stored) as Session;
+        if (!currentSession.accessToken || !currentSession.user?.id) {
+          throw new Error("Session is incomplete.");
+        }
+        setSession(currentSession);
+      } catch {
+        localStorage.removeItem("fcommerce.session");
       }
-      setSession(currentSession);
-      setCart(readCart());
-    } catch {
-      localStorage.removeItem("fcommerce.session");
-      router.replace("/login");
-      return;
     }
 
     fetch(`${apiUrl}/products`)
       .then(async (response) => {
         if (!response.ok) throw new Error("We couldn't load the product catalog.");
-        return response.json() as Promise<Product[]>;
+        return response.json() as Promise<CatalogProduct[]>;
       })
       .then(setProducts)
       .catch(() => setError("Products couldn’t load. Please check that the API and database are running, then refresh."))
       .finally(() => setLoading(false));
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     if (!cartOpen) return;
@@ -135,17 +118,30 @@ export default function Home() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [cartOpen]);
 
+  useEffect(() => {
+    if (!cartToast) return;
+    const timeoutId = window.setTimeout(() => setCartToast(null), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [cartToast]);
+
   const categories = useMemo(() => {
     const available = new Set(products.map((product) => product.category?.name).filter((name): name is string => Boolean(name)));
     const ordered = categoryOrder.filter((name) => available.has(name));
     const additional = Array.from(available).filter((name) => !categoryOrder.includes(name)).sort();
     return ["All", ...ordered, ...additional];
   }, [products]);
-  const visibleProducts = products.filter((product) => {
-    const matchesSearch = `${product.name} ${product.brand} ${product.description}`.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = category === "All" || product.category?.name === category;
-    return matchesSearch && matchesCategory;
-  });
+  const productMatchesCategory = (product: CatalogProduct) =>
+    category === "All" || product.category?.name === category;
+  const visibleProducts = aiSearchResultIds === null
+    ? products.filter((product) => {
+      const matchesSearch = `${product.name} ${product.brand} ${product.description}`.toLowerCase().includes(search.toLowerCase());
+      return matchesSearch && productMatchesCategory(product);
+    })
+    : aiSearchResultIds
+      .map((id) => products.find((product) => product.id === id))
+      .filter((product): product is CatalogProduct => Boolean(product))
+      .filter(productMatchesCategory);
+  const searchResultsActive = Boolean(search.trim() && (aiSearchLoading || aiSearchResultIds !== null || aiSearchNotice));
   const cartCount = Object.values(cart).reduce((total, quantity) => total + quantity, 0);
   const cartProducts = Object.entries(cart).map(([id, quantity]) => ({
     id,
@@ -158,15 +154,65 @@ export default function Home() {
     0,
   );
 
-  function submitSearch(event: FormEvent) {
+  async function submitSearch(event: FormEvent) {
     event.preventDefault();
-    document.getElementById("products")?.scrollIntoView({ behavior: "smooth" });
+    const query = search.trim();
+    if (!query) {
+      setAiSearchResultIds(null);
+      setAiSearchNotice("");
+      document.getElementById("products")?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+
+    const requestId = ++searchRequestId.current;
+    setCategory("All");
+    setAiSearchLoading(true);
+    setAiSearchNotice("");
+    try {
+      const response = await fetch(`${apiUrl}/ai/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok || !isAiSearchResponse(result)) {
+        throw new Error("AI search is unavailable.");
+      }
+      if (requestId !== searchRequestId.current) return;
+      if (result.productIds.length > 0) {
+        setAiSearchResultIds(result.productIds);
+        setAiSearchNotice(result.source === "catalog"
+          ? `AI search is unavailable. Showing ${result.productIds.length} matching products from the catalog.`
+          : `AI found ${result.productIds.length} relevant product${result.productIds.length === 1 ? "" : "s"}.`);
+      } else {
+        setAiSearchResultIds(null);
+        setAiSearchNotice("AI couldn’t find a close match. Showing direct matches instead.");
+      }
+    } catch {
+      if (requestId !== searchRequestId.current) return;
+      setAiSearchResultIds(null);
+      setAiSearchNotice("AI search is unavailable right now. Showing direct matches instead.");
+    } finally {
+      if (requestId === searchRequestId.current) {
+        setAiSearchLoading(false);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }
   }
 
-  function addToCart(product: Product) {
+  function updateSearch(value: string) {
+    searchRequestId.current++;
+    setAiSearchLoading(false);
+    setAiSearchResultIds(null);
+    setAiSearchNotice("");
+    setSearch(value);
+  }
+
+  function addToCart(product: CatalogProduct) {
     const nextCart = { ...cart, [product.id]: (cart[product.id] || 0) + 1 };
     setCart(nextCart);
     localStorage.setItem("fcommerce.cart", JSON.stringify(nextCart));
+    setCartToast({ id: ++cartToastId.current, productName: product.name });
   }
 
   function removeFromCart(productId: string) {
@@ -177,6 +223,10 @@ export default function Home() {
   }
 
   async function startCheckout() {
+    if (!session) {
+      router.push("/login");
+      return;
+    }
     setCheckoutError("");
     setCheckoutOpen(true);
     setCheckoutLoading(true);
@@ -262,11 +312,7 @@ export default function Home() {
     setCartOpen(false);
   }
 
-  if (!session) {
-    return <main className="page-loading"><span className="spinner" /> Loading your store…</main>;
-  }
-
-  const avatarInitials = session.user.name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "F";
+  const avatarInitials = session?.user.name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "F";
 
   return (
     <main>
@@ -281,21 +327,17 @@ export default function Home() {
           <a className="shop-brand" href="/" aria-label="F-Commerce home"><span className="brand-mark">f</span><span>fcommerce<span className="brand-dot">.</span></span></a>
           <form className="shop-search" onSubmit={submitSearch}>
             <span className="search-icon" aria-hidden="true">⌕</span>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products, brands and more" aria-label="Search products" />
-            <button type="submit">Search</button>
+            <input maxLength={200} value={search} onChange={(event) => updateSearch(event.target.value)} placeholder="Try “comfortable shoes under ৳5,000”" aria-label="Search products" />
+            {search && <button className="search-clear" type="button" onClick={() => updateSearch("")} aria-label="Clear search">×</button>}
+            <button type="submit" disabled={aiSearchLoading || !search.trim()}>{aiSearchLoading ? "Searching…" : "Search"}</button>
           </form>
           <div className="header-account">
             <button className="icon-action cart-action" type="button" aria-label={`Cart with ${cartCount} items`} aria-expanded={cartOpen} onClick={() => setCartOpen(true)}><span>♧</span><b>Cart</b><i>{cartCount}</i></button>
-            <a className="header-profile" href="/profile" aria-label="My profile" title="My profile">
+            <a className="header-profile" href={session ? "/profile" : "/login"} aria-label={session ? "My profile" : "Sign in"} title={session ? "My profile" : "Sign in"}>
               <span className="header-avatar">{avatarInitials}</span>
             </a>
           </div>
         </div>
-        <nav className="shop-container category-nav" aria-label="Main navigation">
-          <a className={category === "All" ? "nav-active" : ""} href="#products" onClick={() => setCategory("All")}>Shop all</a>
-          {categories.slice(1).map((item) => <a className={category === item ? "nav-active" : ""} href="#products" key={item} onClick={() => setCategory(item)}>{item}</a>)}
-          <span className="nav-promo">A better way to shop online</span>
-        </nav>
       </header>
 
       {cartOpen && (
@@ -365,11 +407,7 @@ export default function Home() {
               <>
                 <ul className="cart-items">
                   {cartProducts.map(({ id, product, quantity }) => {
-                    const image = product
-                      ? product.images?.find((item) => item.isPrimary)?.imageUrl ||
-                        product.images?.[0]?.imageUrl ||
-                        productPhotos[product.brand] || productPhotos[product.category?.name || ""] || productPhotos.Samsung
-                      : undefined;
+                    const image = product ? getProductImage(product) : undefined;
                     return (
                       <li className="cart-item" key={id}>
                         {image && <img src={image} alt="" />}
@@ -393,58 +431,79 @@ export default function Home() {
       )}
 
       <div className="shop-container">
-        <section className="shop-hero">
-          <div className="hero-copy">
-            <span className="hero-kicker"><span /> YOUR NEW FAVORITE MARKETPLACE</span>
-            <h1>Good finds.<br /><span>Better everyday.</span></h1>
-            <p>Discover carefully chosen products from trusted sellers, all in one place.</p>
-            <a className="hero-button" href="#products">Explore products <span>↗</span></a>
-            <div className="hero-proof"><span className="proof-avatars">✓</span><span><strong>Easy, reliable shopping</strong><small>From discovery to delivery</small></span></div>
-          </div>
-          <div className="hero-art" aria-label="Featured electronics">
-            <div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" />
-            <div className="hero-image-card hero-phone"><img src={productPhotos.Samsung} alt="Featured smartphone" /></div>
-            <div className="hero-image-card hero-headphones"><img src={productPhotos.Sony} alt="Featured headphones" /></div>
-            <div className="hero-tag"><span>CURATED FOR YOU</span><strong>Fresh picks,</strong><strong>fair prices.</strong></div>
-            <span className="hero-sparkle sparkle-one">✳</span><span className="hero-sparkle sparkle-two">✦</span>
-          </div>
-        </section>
+        {!searchResultsActive && (
+          <>
+            <section className="shop-hero">
+              <div className="hero-copy">
+                <span className="hero-kicker"><span /> YOUR NEW FAVORITE MARKETPLACE</span>
+                <h1>Good finds.<br /><span>Better everyday.</span></h1>
+                <p>Discover carefully chosen products from trusted sellers, all in one place.</p>
+                <a className="hero-button" href="#products">Explore products <span>↗</span></a>
+                <div className="hero-proof"><span className="proof-avatars">✓</span><span><strong>Easy, reliable shopping</strong><small>From discovery to delivery</small></span></div>
+              </div>
+              <div className="hero-art" aria-label="Featured electronics">
+                <div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" />
+                <div className="hero-image-card hero-phone"><img src={productPhotos.Samsung} alt="Featured smartphone" /></div>
+                <div className="hero-image-card hero-headphones"><img src={productPhotos.Sony} alt="Featured headphones" /></div>
+                <div className="hero-tag"><span>CURATED FOR YOU</span><strong>Fresh picks,</strong><strong>fair prices.</strong></div>
+                <span className="hero-sparkle sparkle-one">✳</span><span className="hero-sparkle sparkle-two">✦</span>
+              </div>
+            </section>
 
-        <section className="benefit-row" id="benefits" aria-label="Shopping benefits">
-          <div className="benefit-item"><span className="benefit-icon">◇</span><span><strong>Trusted sellers</strong><small>Quality you can count on</small></span></div>
-          <div className="benefit-item"><span className="benefit-icon">↗</span><span><strong>Great value</strong><small>Fair prices, every day</small></span></div>
-          <div className="benefit-item"><span className="benefit-icon">⌂</span><span><strong>Easy delivery</strong><small>From shop to your door</small></span></div>
-        </section>
+            <section className="benefit-row" id="benefits" aria-label="Shopping benefits">
+              <div className="benefit-item"><span className="benefit-icon">◇</span><span><strong>Trusted sellers</strong><small>Quality you can count on</small></span></div>
+              <div className="benefit-item"><span className="benefit-icon">↗</span><span><strong>Great value</strong><small>Fair prices, every day</small></span></div>
+              <div className="benefit-item"><span className="benefit-icon">⌂</span><span><strong>Easy delivery</strong><small>From shop to your door</small></span></div>
+            </section>
+          </>
+        )}
 
-        <section className="catalog-section" id="products">
-          <div className="catalog-heading">
-            <div><span className="section-kicker">THE GOOD STUFF</span><h2>Find something you’ll love</h2><p>Explore our latest picks from verified sellers.</p></div>
-            <span className="product-count">{products.length} products</span>
+        <section className={`catalog-section${searchResultsActive ? " search-results-section" : ""}`} id="products">
+          <div className={searchResultsActive ? "search-results-heading" : "catalog-heading"}>
+            {searchResultsActive ? (
+              <>
+                <div>
+                  <button className="search-back-button" type="button" onClick={() => updateSearch("")}>← Back to shopping</button>
+                  <span className="section-kicker">SEARCH RESULTS</span>
+                  <h2>Recommended products</h2>
+                  <p>Showing matches for “{search.trim()}”</p>
+                </div>
+                <span className="product-count">{aiSearchLoading ? "Searching…" : `${visibleProducts.length} results`}</span>
+              </>
+            ) : (
+              <>
+                <div><span className="section-kicker">THE GOOD STUFF</span><h2>Find something you’ll love</h2><p>Explore our latest picks from verified sellers.</p></div>
+                <span className="product-count">{products.length} products</span>
+              </>
+            )}
           </div>
-          <div className="category-pills" aria-label="Filter by category">
-            {categories.map((item) => <button key={item} className={category === item ? "category-pill selected" : "category-pill"} onClick={() => setCategory(item)}>{item}</button>)}
-          </div>
+          {!searchResultsActive && (
+            <div className="category-pills" aria-label="Filter by category">
+              {categories.map((item) => <button key={item} className={category === item ? "category-pill selected" : "category-pill"} onClick={() => setCategory(item)}>{item}</button>)}
+            </div>
+          )}
 
+          {aiSearchLoading && <div className="ai-search-notice" role="status"><span className="spinner" />Finding relevant products with AI…</div>}
+          {!aiSearchLoading && aiSearchNotice && <div className="ai-search-notice" role="status">{aiSearchNotice}</div>}
           {loading && <div className="catalog-state"><span className="spinner" />Loading products…</div>}
           {!loading && error && <div className="catalog-state catalog-error">{error}</div>}
           {!loading && !error && visibleProducts.length === 0 && <div className="catalog-state">No products match that search. Try another name or category.</div>}
           {!loading && !error && visibleProducts.length > 0 && (
             <div className="product-grid">
               {visibleProducts.map((product, index) => {
-                const image = product.images?.find((item) => item.isPrimary)?.imageUrl ||
-                  product.images?.[0]?.imageUrl ||
-                  productPhotos[product.brand] || productPhotos[product.category?.name || ""] || productPhotos.Samsung;
                 const price = product.discountPrice || product.price;
                 return (
                   <article className="shop-product-card" id={`product-${product.id}`} key={product.id}>
                     <div className={`product-image product-image-${index % 4}`}>
                       <span className="product-badge">{index === 0 ? "POPULAR PICK" : "JUST IN"}</span>
                       <button className="favorite-button" aria-label={`Save ${product.name}`} type="button">♡</button>
-                      <img src={image} alt={product.name} loading="lazy" />
+                      <Link href={`/products/${product.id}`} className="product-image-link" aria-label={`View ${product.name} details`}>
+                        <img src={getProductImage(product)} alt={product.name} loading="lazy" />
+                      </Link>
                     </div>
                     <div className="product-information">
                       <span className="product-category">{product.category?.name || product.brand}</span>
-                      <h3>{product.name}</h3>
+                      <h3><Link href={`/products/${product.id}`}>{product.name}</Link></h3>
                       <p className="product-description">{product.description}</p>
                       <div className="seller-line"><span className="seller-check">✓</span>{product.seller?.businessName || "Verified seller"}</div>
                       <div className="product-bottom"><strong className="product-price">{formatPrice(price)}</strong><button className="add-button" onClick={() => addToCart(product)} aria-label={`Add ${product.name} to cart`}>+</button></div>
@@ -455,9 +514,19 @@ export default function Home() {
             </div>
           )}
         </section>
-        <footer className="shop-footer"><a className="shop-brand footer-brand" href="/"><span className="brand-mark">f</span><span>fcommerce<span className="brand-dot">.</span></span></a><span>Shopping made a little more delightful.</span><span>© 2026 F-Commerce</span></footer>
+        {!searchResultsActive && <footer className="shop-footer"><a className="shop-brand footer-brand" href="/"><span className="brand-mark">f</span><span>fcommerce<span className="brand-dot">.</span></span></a><span>Shopping made a little more delightful.</span><span>© 2026 F-Commerce</span></footer>}
       </div>
-      <AiChat accessToken={session.accessToken} />
+      {cartToast && (
+        <div key={cartToast.id} className="cart-toast" role="status" aria-atomic="true">
+          <span className="cart-toast-icon" aria-hidden="true">✓</span>
+          <span className="cart-toast-copy">
+            <strong>Added to cart</strong>
+            <small>{cartToast.productName}</small>
+          </span>
+          <button type="button" className="cart-toast-dismiss" onClick={() => setCartToast(null)} aria-label="Dismiss notification">×</button>
+        </div>
+      )}
+      <AiChat />
     </main>
   );
 }
