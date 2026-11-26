@@ -7,7 +7,7 @@ import AiChat from "../components/ai-chat";
 import { CatalogProduct, formatPrice, getProductImage, productPhotos } from "../lib/product-catalog";
 
 const apiUrl = "/api/v1";
-const categoryOrder = ["Electronics", "Shirts", "Pants", "Sneakers", "Perfumes", "Women's Collection", "Bags"];
+const categoryOrder = ["Electronics", "Shirts", "Pants", "Sneakers", "Perfumes", "Men's Collection", "Women's Collection", "Bags"];
 
 type Cart = Record<string, number>;
 
@@ -127,6 +127,7 @@ export default function Home() {
 
   const categories = useMemo(() => {
     const available = new Set(products.map((product) => product.category?.name).filter((name): name is string => Boolean(name)));
+    available.add("Men's Collection");
     const ordered = categoryOrder.filter((name) => available.has(name));
     const additional = Array.from(available).filter((name) => !categoryOrder.includes(name)).sort();
     return ["All", ...ordered, ...additional];
