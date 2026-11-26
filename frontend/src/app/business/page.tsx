@@ -31,6 +31,7 @@ type BusinessOrder = {
   order: {
     orderNumber: string;
     paymentStatus: string;
+    payments: { paymentMethod: string }[];
     shippingAddressSnapshot: {
       fullName: string;
       phone: string;
@@ -363,7 +364,9 @@ function OrderList({
       {orders.map((order) => (
         <li key={order.id}>
           <div className="business-order-heading">
-            <div><strong>{order.order.orderNumber}</strong><small>{formatDate(order.createdAt)} · Cash on delivery</small></div>
+            <div><strong>{order.order.orderNumber}</strong><small>{formatDate(order.createdAt)} · {order.order.payments[0]?.paymentMethod === "SSLCOMMERZ"
+              ? `SSLCommerz · ${order.order.paymentStatus}`
+              : `Cash on delivery · ${order.order.paymentStatus}`}</small></div>
             <span className={`business-order-status status-${order.status.toLowerCase()}`}>{order.status}</span>
           </div>
           <div className="business-order-body">

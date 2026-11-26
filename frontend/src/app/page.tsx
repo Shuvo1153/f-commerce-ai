@@ -71,6 +71,7 @@ export default function Home() {
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
   const [orderConfirmation, setOrderConfirmation] = useState<OrderConfirmation | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"CASH_ON_DELIVERY" | "SSLCOMMERZ">("CASH_ON_DELIVERY");
   const [defaultAddress, setDefaultAddress] = useState<SavedAddress | null>(null);
   const [deliveryChoice, setDeliveryChoice] = useState<"default" | "new">("new");
   const [shippingAddress, setShippingAddress] = useState<ShippingAddress>({
@@ -230,6 +231,7 @@ export default function Home() {
     setCheckoutError("");
     setCheckoutOpen(true);
     setCheckoutLoading(true);
+    setPaymentMethod("CASH_ON_DELIVERY");
     setDeliveryChoice("new");
     try {
       const response = await fetch(`${apiUrl}/auth/me`, {
@@ -283,12 +285,15 @@ export default function Home() {
         body: JSON.stringify({
           items: cartProducts.map(({ id, quantity }) => ({ productId: id, quantity })),
           shippingAddress: deliveryAddress,
+          paymentMethod,
         }),
       });
       const result = await response.json() as {
         message?: string | string[];
         orderNumber?: string;
         totalAmount?: string;
+        paymentMethod?: "CASH_ON_DELIVERY" | "SSLCOMMERZ";
+        gatewayUrl?: string;
       };
       if (!response.ok) {
         throw new Error(Array.isArray(result.message) ? result.message.join(" ") : result.message || "We couldn't place your order.");
@@ -296,7 +301,17 @@ export default function Home() {
       if (!result.orderNumber || !result.totalAmount) {
         throw new Error("The order service returned an invalid confirmation.");
       }
-      setOrderConfirmation({ orderNumber: result.orderNumber, totalAmount: result.totalAmount });
+      if (paymentMethod === "SSLCOMMERZ") {
+        if (result.paymentMethod !== "SSLCOMMERZ" || !result.gatewayUrl) {
+          throw new Error("The online payment service returned an invalid checkout session.");
+        }
+        window.location.assign(result.gatewayUrl);
+        return;
+      }
+      setOrderConfirmation({
+        orderNumber: result.orderNumber,
+        totalAmount: result.totalAmount,
+      });
       setCart({});
       localStorage.removeItem("fcommerce.cart");
     } catch (requestError) {
@@ -313,6 +328,9 @@ export default function Home() {
   }
 
   const avatarInitials = session?.user.name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "F";
+  const checkoutSubmitLabel = checkoutSubmitting
+    ? paymentMethod === "SSLCOMMERZ" ? "Connecting to SSLCommerz…" : "Placing order…"
+    : paymentMethod === "SSLCOMMERZ" ? `Continue to online payment · ${formatPrice(cartTotal)}` : `Place order · ${formatPrice(cartTotal)}`;
 
   return (
     <main>
@@ -360,7 +378,28 @@ export default function Home() {
               <form className="checkout-form" onSubmit={placeOrder}>
                 <button className="checkout-back" type="button" onClick={() => setCheckoutOpen(false)}>← Back to cart</button>
                 <h3>Delivery details</h3>
-                <p className="checkout-payment-note">Cash on delivery · Subtotal {formatPrice(cartTotal)}</p>
+                <p className="checkout-payment-note">Choose how to pay · Subtotal {formatPrice(cartTotal)}</p>
+                <fieldset className="delivery-choice payment-choice">
+                  <legend>Payment method</legend>
+                  <label className="delivery-choice-option">
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      checked={paymentMethod === "CASH_ON_DELIVERY"}
+                      onChange={() => setPaymentMethod("CASH_ON_DELIVERY")}
+                    />
+                    <span><strong>Cash on delivery</strong><small>Pay when your order arrives.</small></span>
+                  </label>
+                  <label className="delivery-choice-option">
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      checked={paymentMethod === "SSLCOMMERZ"}
+                      onChange={() => setPaymentMethod("SSLCOMMERZ")}
+                    />
+                    <span><strong>Online payment</strong><small>Pay securely with bKash, Nagad, or other available methods on SSLCommerz.</small></span>
+                  </label>
+                </fieldset>
                 {checkoutLoading ? (
                   <p className="cart-empty"><span className="spinner" /> Loading saved address…</p>
                 ) : (
@@ -396,7 +435,7 @@ export default function Home() {
                 )}
                 {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
                 <button className="checkout-submit" type="submit" disabled={checkoutLoading || checkoutSubmitting || cartProducts.length === 0 || (deliveryChoice === "default" && !defaultAddress)}>
-                  {checkoutSubmitting ? "Placing order…" : `Place order · ${formatPrice(cartTotal)}`}
+                  {checkoutSubmitLabel}
                 </button>
               </form>
             ) : loading && cartCount > 0 ? (

@@ -103,7 +103,14 @@ export class SellerController {
         orderBy: { createdAt: "desc" },
         take: 100,
         include: {
-          order: { select: { orderNumber: true, shippingAddressSnapshot: true, paymentStatus: true } },
+          order: {
+            select: {
+              orderNumber: true,
+              shippingAddressSnapshot: true,
+              paymentStatus: true,
+              payments: { select: { paymentMethod: true }, take: 1 },
+            },
+          },
           items: { select: { productNameSnapshot: true, quantity: true, unitPrice: true, subtotal: true } },
         },
       }),
@@ -427,11 +434,25 @@ export class SellerController {
 
     const sellerOrder = await this.prisma.sellerOrder.findFirst({
       where: { id, sellerId: seller.id },
-      select: { id: true, orderId: true, status: true },
+      select: {
+        id: true,
+        orderId: true,
+        status: true,
+        order: {
+          select: {
+            paymentStatus: true,
+            payments: { select: { paymentMethod: true }, take: 1 },
+          },
+        },
+      },
     });
     if (!sellerOrder) throw new NotFoundException("Order not found for this business.");
     if (sellerOrder.status !== "PENDING") {
       throw new ConflictException("This order has already been processed.");
+    }
+    if (sellerOrder.order.payments[0]?.paymentMethod === "SSLCOMMERZ" &&
+        sellerOrder.order.paymentStatus !== "PAID") {
+      throw new ConflictException("Online payment must be verified before confirming this order.");
     }
 
     await this.prisma.$transaction(async (transaction) => {

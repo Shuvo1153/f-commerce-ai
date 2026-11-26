@@ -50,6 +50,7 @@ type PurchaseOrder = {
   paymentStatus: string;
   totalAmount: string;
   createdAt: string;
+  payments: { paymentMethod: string; paymentStatus: string }[];
   sellerOrders: {
     id: string;
     status: string;
@@ -388,7 +389,12 @@ export default function ProfilePage() {
                             {sellerOrder.status === "PENDING" && <p className="purchase-seller-pending">Waiting for the seller to confirm this order.</p>}
                           </div>
                         ))}
-                        <div className="purchase-order-total"><span>{order.paymentStatus === "PENDING" ? "Cash on delivery" : order.paymentStatus}</span><strong>Total {formatPrice(order.totalAmount)}</strong></div>
+                        <div className="purchase-order-total">
+                          <span>{order.payments[0]?.paymentMethod === "SSLCOMMERZ"
+                            ? `SSLCommerz · ${order.paymentStatus}`
+                            : `Cash on delivery · ${order.paymentStatus}`}</span>
+                          <strong>Total {formatPrice(order.totalAmount)}</strong>
+                        </div>
                       </article>
                     ))}
                     <p className="purchase-refresh-note">Order updates refresh automatically while this page is open.</p>

@@ -57,6 +57,17 @@ The backend uses PostgreSQL, so every group member can share the same records by
 
 Each member must configure their backend `.env` with the same `DATABASE_URL` and `JWT_SECRET`. Every backend that accepts product image uploads also needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, kept private on the server. For Docker Compose, also set `COMPOSE_DATABASE_URL` to the cloud database URL. New user accounts, products, orders, and other database records will then be shared. Product images uploaded while Supabase Storage is configured will also be shared.
 
+## Online payments (bKash and Nagad)
+
+Checkout supports cash on delivery and SSLCommerz hosted online payments. Customers who select online payment are redirected to SSLCommerz, where available methods (including bKash or Nagad, subject to the merchant account’s enabled channels) can be selected. The backend verifies successful transactions with SSLCommerz before marking an order paid.
+
+1. Create an SSLCommerz sandbox account and add its `SSLCOMMERZ_STORE_ID` and `SSLCOMMERZ_STORE_PASSWORD` to the backend `.env`.
+2. Keep `SSLCOMMERZ_IS_LIVE=false` while testing. Change it to `true` only after replacing the sandbox credentials with production credentials.
+3. Set `PUBLIC_BACKEND_URL` and `FRONTEND_URL` to the externally reachable HTTPS URLs of the backend and storefront for hosted checkout. The localhost values in `.env.example` are for local configuration only; SSLCommerz must be able to reach the backend callback and IPN URLs.
+4. Configure the SSLCommerz IPN URL in the merchant panel as `{PUBLIC_BACKEND_URL}/api/v1/payments/sslcommerz/ipn`.
+
+Online payments are limited to ৳10–৳500,000 per order, following the SSLCommerz API limits. Keep all gateway credentials on the backend and never commit `.env`.
+
 ## Presentation link
 
 Install Cloudflare Tunnel once:

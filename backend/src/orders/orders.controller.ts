@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { getUserIdFromAuthorization } from "../auth/access-token";
 import { PrismaService } from "../prisma.service";
+import { SslcommerzService } from "../payments/sslcommerz.service";
 
 type ShippingAddress = {
   fullName: string;
@@ -42,7 +43,10 @@ function parseShippingAddress(value: unknown): ShippingAddress {
 
 @Controller("orders")
 export class OrdersController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sslcommerz: SslcommerzService,
+  ) {}
 
   @Get("mine")
   async purchaseHistory(@Headers("authorization") authorization?: string) {
@@ -57,6 +61,9 @@ export class OrdersController {
         paymentStatus: true,
         totalAmount: true,
         createdAt: true,
+        payments: {
+          select: { paymentMethod: true, paymentStatus: true },
+        },
         sellerOrders: {
           orderBy: { createdAt: "asc" },
           select: {
@@ -105,6 +112,10 @@ export class OrdersController {
       quantities.set(productId, quantity);
     }
     const shippingAddress = parseShippingAddress(body.shippingAddress);
+    const paymentMethod = body.paymentMethod === undefined ? "CASH_ON_DELIVERY" : body.paymentMethod;
+    if (paymentMethod !== "CASH_ON_DELIVERY" && paymentMethod !== "SSLCOMMERZ") {
+      throw new BadRequestException("Choose cash on delivery or online payment.");
+    }
     const products = await this.prisma.product.findMany({
       where: { id: { in: Array.from(quantities.keys()) }, status: "ACTIVE" },
       select: { id: true, name: true, sellerId: true, price: true, discountPrice: true },
@@ -124,11 +135,24 @@ export class OrdersController {
       (total, item) => total.add(item.subtotal),
       new Prisma.Decimal(0),
     );
+    if (paymentMethod === "SSLCOMMERZ") {
+      this.sslcommerz.assertConfigured();
+      if (subtotal.lt(10) || subtotal.gt(500000)) {
+        throw new BadRequestException("Online payments must be between ৳10.00 and ৳500,000.00.");
+      }
+    }
     const orderNumber = `FC-${randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
+    const transactionId = `FC-${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
-    const order = await this.prisma.$transaction(async (transaction) => {
-      const customer = await transaction.user.findUnique({ where: { id: customerId }, select: { id: true } });
+    const { order, customer } = await this.prisma.$transaction(async (transaction) => {
+      const customer = await transaction.user.findUnique({
+        where: { id: customerId },
+        select: { id: true, name: true, email: true },
+      });
       if (!customer) throw new UnauthorizedException("Your session is no longer valid. Please sign in again.");
+      if (paymentMethod === "SSLCOMMERZ" && customer.email.length > 50) {
+        throw new BadRequestException("SSLCommerz requires a customer email address of 50 characters or fewer.");
+      }
 
       const createdOrder = await transaction.order.create({
         data: {
@@ -171,19 +195,52 @@ export class OrdersController {
       await transaction.payment.create({
         data: {
           orderId: createdOrder.id,
-          paymentMethod: "CASH_ON_DELIVERY",
-          transactionId: `COD-${createdOrder.id}`,
+          paymentMethod,
+          transactionId: paymentMethod === "SSLCOMMERZ" ? transactionId : `COD-${createdOrder.id}`,
           amount: subtotal,
           paymentStatus: "PENDING",
         },
       });
-      return createdOrder;
+      return { order: createdOrder, customer };
     });
+
+    if (paymentMethod === "SSLCOMMERZ") {
+      try {
+        const gatewayUrl = await this.sslcommerz.createHostedSession({
+          transactionId,
+          amount: subtotal,
+          contact: { name: customer.name, email: customer.email },
+          address: shippingAddress,
+          itemCount: lineItems.reduce((total, item) => total + item.quantity, 0),
+        });
+        return {
+          orderNumber: order.orderNumber,
+          orderStatus: order.orderStatus,
+          paymentMethod,
+          paymentStatus: order.paymentStatus,
+          totalAmount: order.totalAmount.toString(),
+          gatewayUrl,
+        };
+      } catch (error) {
+        await this.prisma.$transaction(async (transaction) => {
+          await transaction.payment.updateMany({
+            where: { transactionId, paymentStatus: "PENDING" },
+            data: { paymentStatus: "FAILED" },
+          });
+          await transaction.order.update({
+            where: { id: order.id },
+            data: { paymentStatus: "FAILED" },
+          });
+        });
+        throw error;
+      }
+    }
 
     return {
       orderNumber: order.orderNumber,
       orderStatus: order.orderStatus,
-      paymentMethod: "CASH_ON_DELIVERY",
+      paymentMethod,
+      paymentStatus: order.paymentStatus,
       totalAmount: order.totalAmount.toString(),
     };
   }

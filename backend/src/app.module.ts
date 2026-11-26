@@ -8,10 +8,12 @@ import { AiService } from "./ai/ai.service";
 import { HealthController } from "./health.controller";
 import { OrdersController } from "./orders/orders.controller";
 import { SellerController } from "./seller/seller.controller";
+import { PaymentsController } from "./payments/payments.controller";
+import { SslcommerzService } from "./payments/sslcommerz.service";
 
 @Module({
-  controllers: [HealthController, AuthController, ProductController, CartController, AiController, OrdersController, SellerController],
-  providers: [PrismaService, AiService],
+  controllers: [HealthController, AuthController, ProductController, CartController, AiController, OrdersController, SellerController, PaymentsController],
+  providers: [PrismaService, AiService, SslcommerzService],
 })
 export class AppModule {}
 

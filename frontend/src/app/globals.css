@@ -102,6 +102,22 @@ button { cursor: pointer; }
 .order-confirmation p { margin: 0 auto 14px; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .order-confirmation p strong { color: var(--ink); }
 .cod-label { display: inline-block; margin-bottom: 22px; padding: 7px 9px; border-radius: 4px; background: #eef6f0; color: var(--green); font-size: 8px; font-weight: 700; letter-spacing: .8px; }
+.payment-choice { margin-top: 16px; }
+.payment-result-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f6f8f5; }
+.payment-result-card { width: min(100%, 460px); padding: 36px; border: 1px solid var(--line); border-radius: 12px; background: #fff; text-align: center; box-shadow: 0 16px 48px rgba(27, 55, 38, .08); }
+.payment-result-icon { width: 52px; height: 52px; display: grid; place-items: center; margin: 0 auto 18px; border-radius: 50%; background: #edf2eb; color: var(--green); font-size: 23px; font-weight: 700; }
+.payment-result-icon .spinner { width: 22px; height: 22px; }
+.payment-result-success { background: #e6f4ea; }
+.payment-result-failed { background: #f9e9e7; color: #a84740; }
+.payment-result-card h1 { margin: 8px 0; font-family: Manrope, sans-serif; font-size: 25px; }
+.payment-result-card > p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.payment-result-details { display: grid; gap: 8px; margin: 22px 0; padding: 14px; border-radius: 6px; background: #f7f9f6; color: var(--muted); font-size: 12px; }
+.payment-result-details span { display: flex; justify-content: space-between; gap: 12px; }
+.payment-result-details strong { color: var(--ink); }
+.payment-result-actions { display: grid; gap: 12px; margin-top: 22px; }
+.payment-result-actions .checkout-submit { display: grid; place-items: center; text-decoration: none; }
+.payment-result-link { color: var(--green); font-size: 12px; text-decoration: none; }
+.payment-result-link:hover { text-decoration: underline; }
 .signout-button { padding: 8px 0; border: 0; background: none; color: var(--muted); font-size: 11px; }
 .signout-button:hover { color: var(--green); }
 .shop-hero { position: relative; min-height: 398px; display: grid; grid-template-columns: 1.03fr .97fr; overflow: hidden; margin-top: 26px; border-radius: 15px; background: #e9f2e9; }
