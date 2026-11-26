@@ -33,6 +33,7 @@ async function main() {
     { name: "Pants", slug: "pants" },
     { name: "Sneakers", slug: "sneakers" },
     { name: "Perfumes", slug: "perfumes" },
+    { name: "Men's Collection", slug: "mens-collection" },
     { name: "Women's Collection", slug: "dresses" },
     { name: "Bags", slug: "bags" },
   ];
@@ -54,6 +55,7 @@ async function main() {
     { name: "Classic Straight-Fit Denim", slug: "classic-straight-fit-denim", brand: "Northline", price: "2450", description: "Comfort-stretch denim with a timeless straight fit.", category: "pants" },
     { name: "Court Classic Low Sneakers", slug: "court-classic-low-sneakers", brand: "Stride", price: "3450", description: "Everyday low-top sneakers with a cushioned sole.", category: "sneakers" },
     { name: "Cedar & Amber Eau de Parfum", slug: "cedar-amber-eau-de-parfum", brand: "Scent Studio", price: "2200", description: "A warm, long-lasting woody fragrance in a 50 ml bottle.", category: "perfumes" },
+    { name: "Men's Everyday Cotton T-Shirt", slug: "mens-everyday-cotton-t-shirt", brand: "Northline", price: "1450", description: "A comfortable cotton essential with a clean everyday fit.", category: "mens-collection" },
     { name: "Floral Everyday Midi Dress", slug: "floral-everyday-midi-dress", brand: "Bloom & Thread", price: "2890", description: "A light, easy-to-wear floral dress with a flowing midi hem.", category: "dresses" },
     { name: "City Daypack", slug: "city-daypack", brand: "Fieldwork", price: "1750", description: "A compact, durable bag for commuting and day trips.", category: "bags" },
   ] as const;
