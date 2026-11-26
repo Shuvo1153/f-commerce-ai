@@ -114,7 +114,7 @@ function matchesProductSearchIntent(product: SearchableProduct, intent: ProductS
         /\b5g\b/.test(text) && /\b(camera|battery)\b/.test(text));
   }
   return /\b(dress|dresses|shirt|shirts|pants|jeans|trousers|clothing|clothes|apparel|skirt|blouse|jacket)\b/.test(text) ||
-    normalizeSearchText(product.category.name) === "women s collection";
+    ["men s collection", "women s collection"].includes(normalizeSearchText(product.category.name));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

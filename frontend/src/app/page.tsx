@@ -127,7 +127,8 @@ export default function Home() {
 
   const categories = useMemo(() => {
     const available = new Set(products.map((product) => product.category?.name).filter((name): name is string => Boolean(name)));
-    const ordered = categoryOrder.filter((name) => name === "Men's Collection" || available.has(name));
+    available.add("Men's Collection");
+    const ordered = categoryOrder.filter((name) => available.has(name));
     const additional = Array.from(available).filter((name) => !categoryOrder.includes(name)).sort();
     return ["All", ...ordered, ...additional];
   }, [products]);
