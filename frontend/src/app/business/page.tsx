@@ -19,6 +19,7 @@ type Product = {
   description: string;
   price: string;
   discountPrice: string | null;
+  stockQuantity: number;
   status: string;
   category: { name: string };
   images: { imageUrl: string; isPrimary: boolean }[];
@@ -65,7 +66,7 @@ type ProductForm = {
   categoryId: string;
   price: string;
   discountPrice: string;
-  inStock: string;
+  stockQuantity: string;
 };
 
 const emptyProduct: ProductForm = {
@@ -75,7 +76,7 @@ const emptyProduct: ProductForm = {
   categoryId: "",
   price: "",
   discountPrice: "",
-  inStock: "true",
+  stockQuantity: "0",
 };
 
 function formatPrice(value: string | number) {
@@ -176,12 +177,12 @@ export default function BusinessDashboardPage() {
       });
       if (!response.ok) throw new Error(await errorMessage(response));
       await reloadDashboard();
-      const inStock = productForm.inStock === "true";
+      const stockQuantity = Number(productForm.stockQuantity);
       setProductForm(emptyProduct);
       setProductImage(null);
-      setProductMessage(inStock
-        ? "Product published to the storefront."
-        : "Product added as out of stock and hidden from the storefront.");
+      setProductMessage(stockQuantity > 0
+        ? `Product published with ${stockQuantity} units available.`
+        : "Product published as out of stock. Customers can see it but cannot order it.");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Could not publish the product.");
     } finally {
@@ -224,6 +225,28 @@ export default function BusinessDashboardPage() {
       await reloadDashboard();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Could not update product availability.");
+    } finally {
+      setUpdatingProductId("");
+    }
+  }
+
+  async function updateProductStock(productId: string, stockQuantity: number) {
+    if (!session) return;
+    setUpdatingProductId(productId);
+    setError("");
+    try {
+      const response = await fetch(`${apiUrl}/seller/products/${productId}/stock`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ stockQuantity }),
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      await reloadDashboard();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not update product stock.");
     } finally {
       setUpdatingProductId("");
     }
@@ -314,7 +337,7 @@ export default function BusinessDashboardPage() {
                   <label>Category<select value={productForm.categoryId} onChange={(event) => setProductForm({ ...productForm, categoryId: event.target.value })} required><option value="">Choose category</option>{dashboard.categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
                   <label>Price (৳)<input type="number" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} required min="0.01" step="0.01" /></label>
                   <label>Discount price (৳)<input type="number" value={productForm.discountPrice} onChange={(event) => setProductForm({ ...productForm, discountPrice: event.target.value })} min="0.01" step="0.01" /></label>
-                  <label>Availability<select value={productForm.inStock} onChange={(event) => setProductForm({ ...productForm, inStock: event.target.value })}><option value="true">In stock</option><option value="false">Out of stock</option></select></label>
+                  <label>Available quantity<input type="number" value={productForm.stockQuantity} onChange={(event) => setProductForm({ ...productForm, stockQuantity: event.target.value })} required min="0" max="2147483647" step="1" /></label>
                   <label className="business-field-wide">Product image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
                     const selected = event.target.files?.[0] || null;
                     if (selected && selected.size > 5 * 1024 * 1024) {
@@ -332,7 +355,12 @@ export default function BusinessDashboardPage() {
               </section>
               <section className="business-panel">
                 <div className="business-panel-heading"><div><h2>Published products</h2><p>{dashboard.products.length} total listings</p></div></div>
-                <ProductList products={dashboard.products} updatingProductId={updatingProductId} onUpdateAvailability={updateProductAvailability} />
+                <ProductList
+                  products={dashboard.products}
+                  updatingProductId={updatingProductId}
+                  onUpdateAvailability={updateProductAvailability}
+                  onUpdateStock={updateProductStock}
+                />
               </section>
             </div>
           )}
@@ -392,11 +420,19 @@ function ProductList({
   products,
   updatingProductId,
   onUpdateAvailability,
+  onUpdateStock,
 }: {
   products: Product[];
   updatingProductId: string;
   onUpdateAvailability: (productId: string, inStock: boolean) => void;
+  onUpdateStock: (productId: string, stockQuantity: number) => void;
 }) {
+  const [stockQuantities, setStockQuantities] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setStockQuantities(Object.fromEntries(products.map((product) => [product.id, String(product.stockQuantity)])));
+  }, [products]);
+
   if (products.length === 0) return <p className="business-empty">You haven’t listed any products yet.</p>;
   return (
     <ul className="business-product-list">
@@ -406,8 +442,11 @@ function ProductList({
           <span className="business-product-info"><strong>{product.name}</strong><small>{product.category.name} · {product.brand}</small></span>
           <span className="business-product-price">{formatPrice(product.discountPrice || product.price)}</span>
           <span className="business-product-actions">
+            <span className={product.stockQuantity > 0 ? "business-stock-status business-stock-available" : "business-stock-status business-stock-unavailable"}>
+              {product.stockQuantity > 0 ? `${product.stockQuantity} in stock` : "Out of stock"}
+            </span>
             <span className={`business-order-status status-${product.status.toLowerCase()}`}>
-              {product.status === "ACTIVE" ? "In stock" : product.status === "INACTIVE" ? "Out of stock" : "Draft"}
+              {product.status === "ACTIVE" ? "Published" : product.status === "INACTIVE" ? "Hidden" : "Draft"}
             </span>
             {product.status !== "DRAFT" && (
               <button
@@ -418,10 +457,33 @@ function ProductList({
               >
                 {updatingProductId === product.id
                   ? "Updating…"
-                  : product.status === "ACTIVE" ? "Mark out of stock" : "Mark in stock"}
+                  : product.status === "ACTIVE" ? "Hide listing" : "Publish listing"}
               </button>
             )}
           </span>
+          <form
+            className="business-stock-editor"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onUpdateStock(product.id, Number(stockQuantities[product.id]));
+            }}
+          >
+            <label>
+              Available units
+              <input
+                type="number"
+                min="0"
+                max="2147483647"
+                step="1"
+                required
+                value={stockQuantities[product.id] ?? product.stockQuantity}
+                onChange={(event) => setStockQuantities({ ...stockQuantities, [product.id]: event.target.value })}
+              />
+            </label>
+            <button type="submit" className="business-stock-toggle" disabled={updatingProductId === product.id}>
+              {updatingProductId === product.id ? "Saving…" : "Update stock"}
+            </button>
+          </form>
         </li>
       ))}
     </ul>

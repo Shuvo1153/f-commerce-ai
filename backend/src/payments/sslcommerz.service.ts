@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { releaseReservedStock } from "../orders/inventory";
 
 type PaymentContact = {
   name: string;
@@ -178,7 +179,7 @@ export class SslcommerzService {
 
     await this.prisma.$transaction(async (transaction) => {
       const updated = await transaction.payment.updateMany({
-        where: { id: payment.id, paymentStatus: { not: "PAID" } },
+        where: { id: payment.id, paymentStatus: "PENDING" },
         data: { paymentStatus: "PAID", paidAt: new Date() },
       });
       if (updated.count === 0) return;
@@ -211,8 +212,13 @@ export class SslcommerzService {
       if (updated.count === 0) return;
       await transaction.order.update({
         where: { id: payment.orderId },
-        data: { paymentStatus: status },
+        data: { paymentStatus: status, orderStatus: "CANCELLED" },
       });
+      await transaction.sellerOrder.updateMany({
+        where: { orderId: payment.orderId, status: "PENDING" },
+        data: { status: "CANCELLED" },
+      });
+      await releaseReservedStock(transaction, payment.orderId);
     });
 
     return payment.order.orderNumber;

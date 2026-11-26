@@ -18,23 +18,42 @@ export class ProductController {
         }
         : { status: "ACTIVE" },
       orderBy: { createdAt: "desc" },
-      include: {
-        images: true,
-        variants: true,
-        category: true,
+      select: {
+        id: true,
+        name: true,
+        brand: true,
+        description: true,
+        price: true,
+        discountPrice: true,
+        stockQuantity: true,
+        images: { select: { id: true, imageUrl: true, isPrimary: true, sortOrder: true } },
+        variants: {
+          select: { id: true, variantName: true, variantValue: true, priceAdjustment: true },
+        },
+        category: { select: { name: true } },
         seller: { select: { businessName: true } },
       },
-    });
+    }).then((products) => products.map(({ stockQuantity, ...product }) => ({
+      ...product,
+      inStock: stockQuantity > 0,
+    })));
   }
 
   @Get(":id")
   async detail(@Param("id") id: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, status: "ACTIVE" },
-      include: {
-        images: { orderBy: { sortOrder: "asc" } },
+      select: {
+        id: true,
+        name: true,
+        brand: true,
+        description: true,
+        price: true,
+        discountPrice: true,
+        stockQuantity: true,
+        images: { select: { id: true, imageUrl: true, isPrimary: true, sortOrder: true }, orderBy: { sortOrder: "asc" } },
         variants: {
-          select: { id: true, variantName: true, variantValue: true, priceAdjustment: true, stockQuantity: true },
+          select: { id: true, variantName: true, variantValue: true, priceAdjustment: true },
         },
         category: { select: { name: true, slug: true } },
         seller: { select: { businessName: true } },
@@ -45,6 +64,7 @@ export class ProductController {
       },
     });
     if (!product) throw new NotFoundException("Product not found.");
-    return product;
+    const { stockQuantity, ...publicProduct } = product;
+    return { ...publicProduct, inStock: stockQuantity > 0 };
   }
 }

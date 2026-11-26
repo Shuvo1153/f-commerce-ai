@@ -15,7 +15,7 @@ type ChatProduct = {
   discountPrice: string | number | null;
   category: { name: string };
   imageUrl: string | null;
-  availability: "in stock" | "out of stock" | "not listed";
+  inStock: boolean;
 };
 
 type ChatMessage = {
@@ -38,7 +38,7 @@ function isChatProduct(value: unknown): value is ChatProduct {
     (value.discountPrice === null || typeof value.discountPrice === "string" || typeof value.discountPrice === "number") &&
     typeof value.category.name === "string" &&
     (value.imageUrl === null || typeof value.imageUrl === "string") &&
-    (value.availability === "in stock" || value.availability === "out of stock" || value.availability === "not listed");
+    typeof value.inStock === "boolean";
 }
 
 function parseChatResponse(value: unknown): { reply: string; products: ChatProduct[] } | null {
@@ -140,7 +140,7 @@ export default function AiChat() {
                               <span>{product.category.name} · {product.brand}</span>
                               <strong>{product.name}</strong>
                               <small>{formatPrice(product.discountPrice ?? product.price)}</small>
-                              {product.availability !== "not listed" && <small>{product.availability}</small>}
+                              <small>{product.inStock ? "In Stock" : "Out of Stock"}</small>
                             </div>
                           </div>
                           <Link href={`/products/${product.id}`} onClick={() => setIsOpen(false)}>View product ↗</Link>

@@ -14,7 +14,6 @@ type ProductDetail = CatalogProduct & {
     variantName: string;
     variantValue: string;
     priceAdjustment: string | number;
-    stockQuantity: number;
   }[];
   reviews: { id: string; rating: number; comment: string | null; createdAt: string }[];
 };
@@ -39,6 +38,7 @@ export default function ProductDetailPage() {
   const [selectedImage, setSelectedImage] = useState("");
   const [pageState, setPageState] = useState<PageState>("loading");
   const [addedToCart, setAddedToCart] = useState(false);
+  const [cartQuantity, setCartQuantity] = useState(0);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -61,6 +61,15 @@ export default function ProductDetailPage() {
         if (active) {
           setProduct(details);
           setSelectedImage(getProductImage(details));
+          try {
+            const saved: unknown = JSON.parse(localStorage.getItem("fcommerce.cart") || "{}");
+            if (typeof saved === "object" && saved !== null && !Array.isArray(saved)) {
+              const quantity = (saved as Record<string, unknown>)[details.id];
+              setCartQuantity(typeof quantity === "number" && Number.isSafeInteger(quantity) && quantity > 0 ? quantity : 0);
+            }
+          } catch {
+            setCartQuantity(0);
+          }
           setPageState("ready");
         }
       } catch (requestError) {
@@ -90,8 +99,12 @@ export default function ProductDetailPage() {
     } catch {
       cart = {};
     }
-    cart[product.id] = (cart[product.id] || 0) + 1;
+    if (!product.inStock) return;
+    const quantity = (cart[product.id] || 0) + 1;
+    if (quantity > 99) return;
+    cart[product.id] = quantity;
     localStorage.setItem("fcommerce.cart", JSON.stringify(cart));
+    setCartQuantity(quantity);
     setAddedToCart(true);
   }
 
@@ -122,6 +135,7 @@ export default function ProductDetailPage() {
   const primaryPrice = product.discountPrice || product.price;
   const hasDiscount = product.discountPrice !== null &&
     Number(product.discountPrice) < Number(product.price);
+  const productOutOfStock = !product.inStock;
 
   return (
     <main className="product-detail-page">
@@ -171,23 +185,30 @@ export default function ProductDetailPage() {
               <span className="seller-check">✓</span>
               Sold by <strong>{product.seller?.businessName || "Marketplace seller"}</strong>
             </div>
+            <p className={productOutOfStock ? "product-stock-unavailable" : "product-stock-available"}>
+              {productOutOfStock ? "Out of Stock" : "In Stock"}
+            </p>
 
             {product.variants.length > 0 && (
               <section className="product-variant-section" aria-labelledby="product-variants-title">
-                <h2 id="product-variants-title">Options and availability</h2>
+                <h2 id="product-variants-title">Product options</h2>
                 <ul>
                   {product.variants.map((variant) => (
                     <li key={variant.id}>
                       <span>{variant.variantName}: <strong>{variant.variantValue}</strong></span>
-                      <span>{variant.stockQuantity > 0 ? `${variant.stockQuantity} available` : "Out of stock"}</span>
                     </li>
                   ))}
                 </ul>
               </section>
             )}
 
-            <button className="product-detail-add" type="button" onClick={addToCart}>
-              {addedToCart ? "Added to cart" : "Add to cart"}
+            <button
+              className="product-detail-add"
+              type="button"
+              onClick={addToCart}
+              disabled={productOutOfStock || cartQuantity >= 99}
+            >
+              {productOutOfStock ? "Out of Stock" : cartQuantity >= 99 ? "Maximum quantity per order" : addedToCart ? "Added to cart" : "Add to cart"}
             </button>
             {addedToCart && (
               <p className="product-detail-cart-message" role="status">

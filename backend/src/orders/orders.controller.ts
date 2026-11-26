@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { getUserIdFromAuthorization } from "../auth/access-token";
 import { PrismaService } from "../prisma.service";
 import { SslcommerzService } from "../payments/sslcommerz.service";
+import { releaseReservedStock } from "./inventory";
 
 type ShippingAddress = {
   fullName: string;
@@ -118,7 +119,7 @@ export class OrdersController {
     }
     const products = await this.prisma.product.findMany({
       where: { id: { in: Array.from(quantities.keys()) }, status: "ACTIVE" },
-      select: { id: true, name: true, sellerId: true, price: true, discountPrice: true },
+      select: { id: true, name: true, sellerId: true, price: true, discountPrice: true, stockQuantity: true },
     });
     if (products.length !== quantities.size) {
       throw new BadRequestException("One or more products in your cart are no longer available.");
@@ -128,6 +129,11 @@ export class OrdersController {
     const lineItems = Array.from(quantities, ([productId, quantity]) => {
       const product = productById.get(productId);
       if (!product) throw new BadRequestException("A product in your cart is no longer available.");
+      if (quantity > product.stockQuantity) {
+        throw new BadRequestException(
+          `${product.name} does not have enough stock for this quantity; reduce the quantity and try again.`,
+        );
+      }
       const unitPrice = product.discountPrice ?? product.price;
       return { product, quantity, unitPrice, subtotal: unitPrice.mul(quantity) };
     });
@@ -152,6 +158,22 @@ export class OrdersController {
       if (!customer) throw new UnauthorizedException("Your session is no longer valid. Please sign in again.");
       if (paymentMethod === "SSLCOMMERZ" && customer.email.length > 50) {
         throw new BadRequestException("SSLCommerz requires a customer email address of 50 characters or fewer.");
+      }
+
+      for (const item of [...lineItems].sort((left, right) => left.product.id.localeCompare(right.product.id))) {
+        const reserved = await transaction.product.updateMany({
+          where: {
+            id: item.product.id,
+            status: "ACTIVE",
+            stockQuantity: { gte: item.quantity },
+          },
+          data: { stockQuantity: { decrement: item.quantity } },
+        });
+        if (reserved.count !== 1) {
+          throw new BadRequestException(
+            `${item.product.name} no longer has enough stock; refresh your cart and try again.`,
+          );
+        }
       }
 
       const createdOrder = await transaction.order.create({
@@ -223,14 +245,20 @@ export class OrdersController {
         };
       } catch (error) {
         await this.prisma.$transaction(async (transaction) => {
-          await transaction.payment.updateMany({
+          const failed = await transaction.payment.updateMany({
             where: { transactionId, paymentStatus: "PENDING" },
             data: { paymentStatus: "FAILED" },
           });
+          if (failed.count === 0) return;
           await transaction.order.update({
             where: { id: order.id },
-            data: { paymentStatus: "FAILED" },
+            data: { paymentStatus: "FAILED", orderStatus: "CANCELLED" },
           });
+          await transaction.sellerOrder.updateMany({
+            where: { orderId: order.id, status: "PENDING" },
+            data: { status: "CANCELLED" },
+          });
+          await releaseReservedStock(transaction, order.id);
         });
         throw error;
       }

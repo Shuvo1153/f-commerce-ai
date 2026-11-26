@@ -33,6 +33,12 @@ E-commerce marketplace based on the supplied technical architecture.
 
 Run `npm.cmd run dev` from the project root or the `frontend` folder to start both the frontend and backend together. The storefront runs at `http://localhost:3000`.
 
+## Product inventory
+
+Sellers enter a product's available quantity when publishing it and can view and update the exact quantity from the business dashboard. Customers only see whether a product is in stock or out of stock; exact quantities are not included in public product responses. Products with zero stock remain visible but cannot be added to the cart or ordered. Stock is reserved atomically when an order is placed to prevent overselling, and is returned if an online payment fails or is cancelled.
+
+The inventory migration carries over the sum of existing variant quantities. Products without variant quantities start at zero, so sellers should verify and enter their actual stock in the dashboard after migrating.
+
 ## Shared cloud database (Supabase)
 
 The backend uses PostgreSQL, so every group member can share the same records by pointing their backend at the same Supabase project:

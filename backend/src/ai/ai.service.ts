@@ -175,7 +175,7 @@ export class AiService {
     const { message, history } = this.parseRequest(body);
     const budget = parseBudgetLimit(message);
     const catalog = await this.prisma.product.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", stockQuantity: { gt: 0 } },
       select: {
         id: true,
         name: true,
@@ -183,6 +183,7 @@ export class AiService {
         description: true,
         price: true,
         discountPrice: true,
+        stockQuantity: true,
         category: { select: { name: true } },
         images: {
           select: { imageUrl: true, isPrimary: true, sortOrder: true },
@@ -190,7 +191,7 @@ export class AiService {
           take: 1,
         },
         variants: {
-          select: { variantName: true, variantValue: true, priceAdjustment: true, stockQuantity: true },
+          select: { variantName: true, variantValue: true, priceAdjustment: true },
         },
       },
       orderBy: { createdAt: "desc" },
@@ -224,16 +225,14 @@ export class AiService {
         name: variant.variantName,
         value: variant.variantValue,
         priceAdjustment: variant.priceAdjustment.toString(),
-        stockQuantity: variant.stockQuantity,
       })),
-      availability: product.variants.length === 0
-        ? "not listed"
-        : product.variants.some((variant) => variant.stockQuantity > 0) ? "in stock" : "out of stock",
+      availability: "In Stock",
     }));
     const systemPrompt = [
       "You are the F-Commerce shopping assistant. Help customers discover, compare, and choose products from the catalog.",
       "Use only facts in the catalog. Never invent prices, stock, delivery, returns, or product details.",
-      "Prices are in Bangladeshi taka. Use effectivePrice (discounted price when present) for budget checks. Mention stock only when availability or variant stock is listed.",
+      "Describe availability only as In Stock or Out of Stock; never reveal or infer an exact stock quantity.",
+      "Prices are in Bangladeshi taka. Use effectivePrice (discounted price when present) for budget checks. Mention stock only when availability is listed.",
       "For broad requests, recommend the closest matching options and explain briefly why each fits. If the request is unclear, ask one focused follow-up question.",
       "Recommend at most three products, using only their exact catalog IDs. If none fit, return an empty productIds array.",
       "If no product fits the budget or request, say so plainly and suggest a useful next step. You cannot place orders, change carts, or perform account actions.",
@@ -268,9 +267,7 @@ export class AiService {
         effectivePrice: (product.discountPrice ?? product.price).toString(),
         category: product.category,
         imageUrl: product.images[0]?.imageUrl ?? null,
-        availability: product.variants.length === 0
-          ? "not listed"
-          : product.variants.some((variant) => variant.stockQuantity > 0) ? "in stock" : "out of stock",
+        inStock: product.stockQuantity > 0,
       }];
     }).slice(0, 3);
 
@@ -283,7 +280,7 @@ export class AiService {
     const query = this.parseSearchQuery(body);
     const budget = parseBudgetLimit(query);
     const catalog = await this.prisma.product.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", stockQuantity: { gt: 0 } },
       select: {
         id: true,
         name: true,
@@ -291,9 +288,10 @@ export class AiService {
         description: true,
         price: true,
         discountPrice: true,
+        stockQuantity: true,
         category: { select: { name: true } },
         variants: {
-          select: { variantName: true, variantValue: true, priceAdjustment: true, stockQuantity: true },
+          select: { variantName: true, variantValue: true, priceAdjustment: true },
         },
       },
       orderBy: { createdAt: "desc" },
@@ -328,11 +326,8 @@ export class AiService {
         name: variant.variantName,
         value: variant.variantValue,
         priceAdjustment: variant.priceAdjustment.toString(),
-        stockQuantity: variant.stockQuantity,
       })),
-      availability: product.variants.length === 0
-        ? "not listed"
-        : product.variants.some((variant) => variant.stockQuantity > 0) ? "in stock" : "out of stock",
+      availability: "In Stock",
     }));
     const systemPrompt = [
       "You rank F-Commerce products for a customer search.",

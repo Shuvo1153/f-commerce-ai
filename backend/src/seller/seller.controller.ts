@@ -49,6 +49,18 @@ function parsePrice(value: unknown, field: string): Prisma.Decimal {
   return price;
 }
 
+function parseStockQuantity(value: unknown): number {
+  const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  if (!/^\d+$/.test(text)) {
+    throw new BadRequestException("Stock quantity must be a non-negative whole number.");
+  }
+  const quantity = Number(text);
+  if (!Number.isSafeInteger(quantity) || quantity > 2147483647) {
+    throw new BadRequestException("Stock quantity is outside the supported range.");
+  }
+  return quantity;
+}
+
 function createSlug(value: string): string {
   const base = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 100) || "product";
   return `${base}-${randomUUID().slice(0, 8)}`;
@@ -240,10 +252,7 @@ export class SellerController {
     const price = parsePrice(body.price, "Price");
     const discountPrice = body.discountPrice === undefined || body.discountPrice === null ||
       body.discountPrice === "" ? null : parsePrice(body.discountPrice, "Discount price");
-    const inStock = body.inStock === undefined ? "true" : body.inStock;
-    if (inStock !== "true" && inStock !== "false") {
-      throw new BadRequestException("Choose whether the product is in stock.");
-    }
+    const stockQuantity = parseStockQuantity(body.stockQuantity);
     if (discountPrice && discountPrice.gte(price)) {
       throw new BadRequestException("Discount price must be less than the regular price.");
     }
@@ -262,7 +271,8 @@ export class SellerController {
           description,
           price,
           discountPrice,
-          status: inStock === "true" ? "ACTIVE" : "INACTIVE",
+          stockQuantity,
+          status: "ACTIVE",
           ...(savedImage ? { images: { create: { imageUrl: savedImage.url, isPrimary: true } } } : {}),
         },
         include: { category: true, images: true },
@@ -272,6 +282,37 @@ export class SellerController {
       if (savedImage?.storagePath) await this.deleteProductImage(savedImage.storagePath);
       throw error;
     }
+  }
+
+  @Patch("products/:id/stock")
+  async updateProductStock(
+    @Headers("authorization") authorization: string | undefined,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const userId = getUserIdFromAuthorization(authorization);
+    if (!isRecord(body) || !("stockQuantity" in body)) {
+      throw new BadRequestException("Enter a stock quantity.");
+    }
+    const stockQuantity = parseStockQuantity(body.stockQuantity);
+    const seller = await this.prisma.sellerProfile.findUnique({
+      where: { userId },
+      select: { id: true, verificationStatus: true },
+    });
+    if (!seller || seller.verificationStatus !== "VERIFIED") {
+      throw new ConflictException("An active business profile is required to update stock.");
+    }
+    const product = await this.prisma.product.findFirst({
+      where: { id, sellerId: seller.id },
+      select: { id: true },
+    });
+    if (!product) throw new NotFoundException("Product not found for this business.");
+
+    return this.prisma.product.update({
+      where: { id: product.id },
+      data: { stockQuantity },
+      select: { id: true, stockQuantity: true },
+    });
   }
 
   @Patch("products/:id/availability")

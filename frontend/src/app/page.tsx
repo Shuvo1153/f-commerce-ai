@@ -155,6 +155,7 @@ export default function Home() {
       total + (product ? Number(product.discountPrice || product.price) * quantity : 0),
     0,
   );
+  const cartHasUnavailableItems = cartProducts.some(({ product }) => !product || !product.inStock);
 
   async function submitSearch(event: FormEvent) {
     event.preventDefault();
@@ -211,10 +212,21 @@ export default function Home() {
   }
 
   function addToCart(product: CatalogProduct) {
+    if (!product.inStock || (cart[product.id] || 0) >= 99) return;
     const nextCart = { ...cart, [product.id]: (cart[product.id] || 0) + 1 };
     setCart(nextCart);
     localStorage.setItem("fcommerce.cart", JSON.stringify(nextCart));
     setCartToast({ id: ++cartToastId.current, productName: product.name });
+  }
+
+  function setCartQuantity(productId: string, quantity: number) {
+    const product = products.find((item) => item.id === productId);
+    if (quantity > 99 || (quantity > 0 && (!product || !product.inStock))) return;
+    const nextCart = { ...cart };
+    if (quantity > 0) nextCart[productId] = quantity;
+    else delete nextCart[productId];
+    setCart(nextCart);
+    localStorage.setItem("fcommerce.cart", JSON.stringify(nextCart));
   }
 
   function removeFromCart(productId: string) {
@@ -264,7 +276,7 @@ export default function Home() {
   async function placeOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session) return;
-    if (cartProducts.some(({ product }) => !product)) {
+    if (cartProducts.some(({ product }) => !product || !product.inStock)) {
       setCheckoutError("Remove unavailable products from your cart before placing the order.");
       return;
     }
@@ -454,7 +466,14 @@ export default function Home() {
                         <div className="cart-item-details">
                           <strong>{product?.name || "Product no longer available"}</strong>
                           {product && <span>{formatPrice(product.discountPrice || product.price)} each</span>}
-                          <span className="cart-item-quantity">Quantity: {quantity}</span>
+                          <span className="cart-item-quantity">
+                            <button type="button" onClick={() => setCartQuantity(id, quantity - 1)} aria-label={`Decrease ${product?.name || "product"} quantity`}>−</button>
+                            <span>Quantity: {quantity}</span>
+                            <button type="button" onClick={() => setCartQuantity(id, quantity + 1)} disabled={!product || !product.inStock || quantity >= 99} aria-label={`Increase ${product?.name || "product"} quantity`}>+</button>
+                          </span>
+                          {product && <small className={product.inStock ? "cart-stock-available" : "cart-stock-error"}>
+                            {product.inStock ? "In Stock" : "Out of Stock"}
+                          </small>}
                         </div>
                         <button className="cart-remove" type="button" onClick={() => removeFromCart(id)} aria-label={`Remove ${product?.name || "unavailable product"} from cart`}>Remove</button>
                       </li>
@@ -463,7 +482,7 @@ export default function Home() {
                 </ul>
                 <div className="cart-total"><span>Subtotal</span><strong>{formatPrice(cartTotal)}</strong></div>
                 <div className="cart-payment-method"><span>Payment method</span><strong>Cash on delivery</strong></div>
-                <button className="checkout-submit" type="button" onClick={startCheckout} disabled={cartProducts.some(({ product }) => !product)}>Proceed to checkout</button>
+                <button className="checkout-submit" type="button" onClick={startCheckout} disabled={cartHasUnavailableItems}>Proceed to checkout</button>
               </>
             )}
           </aside>
@@ -545,8 +564,11 @@ export default function Home() {
                       <span className="product-category">{product.category?.name || product.brand}</span>
                       <h3><Link href={`/products/${product.id}`}>{product.name}</Link></h3>
                       <p className="product-description">{product.description}</p>
+                      <p className={product.inStock ? "product-stock-available" : "product-stock-unavailable"}>
+                        {product.inStock ? "In Stock" : "Out of Stock"}
+                      </p>
                       <div className="seller-line"><span className="seller-check">✓</span>{product.seller?.businessName || "Verified seller"}</div>
-                      <div className="product-bottom"><strong className="product-price">{formatPrice(price)}</strong><button className="add-button" onClick={() => addToCart(product)} aria-label={`Add ${product.name} to cart`}>+</button></div>
+                      <div className="product-bottom"><strong className="product-price">{formatPrice(price)}</strong><button className="add-button" onClick={() => addToCart(product)} disabled={!product.inStock || (cart[product.id] || 0) >= 99} aria-label={`Add ${product.name} to cart`}>+</button></div>
                     </div>
                   </article>
                 );

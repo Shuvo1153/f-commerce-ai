@@ -5,6 +5,7 @@ export type CatalogProduct = {
   description: string;
   price: string | number;
   discountPrice: string | number | null;
+  inStock: boolean;
   category?: { name: string } | null;
   seller?: { businessName: string } | null;
   images?: { id?: string; imageUrl: string; isPrimary: boolean; sortOrder: number }[];
