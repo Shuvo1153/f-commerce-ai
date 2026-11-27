@@ -1,0 +1,23 @@
+name: Deploy Render services
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deployments
+        env:
+          API_DEPLOY_HOOK: ${{ secrets.RENDER_API_DEPLOY_HOOK }}
+          STOREFRONT_DEPLOY_HOOK: ${{ secrets.RENDER_STOREFRONT_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$API_DEPLOY_HOOK" ] || [ -z "$STOREFRONT_DEPLOY_HOOK" ]; then
+            echo "::notice::Add both Render deploy hooks as GitHub Actions secrets to enable deployments."
+            exit 0
+          fi
+          curl --fail --silent --show-error --output /dev/null --request POST "$API_DEPLOY_HOOK"
+          curl --fail --silent --show-error --output /dev/null --request POST "$STOREFRONT_DEPLOY_HOOK"

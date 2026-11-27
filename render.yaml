@@ -8,7 +8,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /api/v1/health
-    autoDeployTrigger: commit
+    autoDeployTrigger: "off"
     dockerCommand: sh -c "npx prisma migrate deploy && npm run start"
     envVars:
       - key: DATABASE_URL
@@ -47,7 +47,7 @@ services:
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
     healthCheckPath: /
-    autoDeployTrigger: commit
+    autoDeployTrigger: "off"
     envVars:
       - key: BACKEND_URL
         value: https://f-commerce-api.onrender.com

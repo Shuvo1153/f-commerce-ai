@@ -94,11 +94,12 @@ The terminal prints a temporary public `https://…trycloudflare.com` link. Shar
 
 The root `render.yaml` defines a public Render storefront and API using the shared Supabase database. To deploy:
 
-1. In Render, choose **New → Blueprint**, connect the public `Shuvo1153/f-commerce-ai` GitHub repository, and deploy the Blueprint from `main`.
+1. In Render, choose **New → Blueprint** and use the public repository URL `https://github.com/Shuvo1153/f-commerce-ai` if it is not listed under your connected GitHub account. Deploy the Blueprint from `main`.
 2. When prompted, set the API service's `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` from the private project configuration. Keep secrets in Render's environment settings, never in GitHub. Set `GROQ_API_KEY` and SSLCommerz sandbox credentials if those features are needed.
-3. Use the generated storefront URL to share the website. If Render assigns different service URLs, update `BACKEND_URL`, `PUBLIC_BACKEND_URL`, and `FRONTEND_URL` in the Render services to match, then redeploy.
+3. Copy each service's **Deploy Hook** from its Render settings. In GitHub, add them under **Settings → Secrets and variables → Actions** as `RENDER_API_DEPLOY_HOOK` and `RENDER_STOREFRONT_DEPLOY_HOOK`. The workflow redeploys both services on each push or merge to `main`.
+4. Use the generated storefront URL to share the website. If Render assigns different service URLs, update `BACKEND_URL`, `PUBLIC_BACKEND_URL`, and `FRONTEND_URL` in the Render services to match, then redeploy.
 
-Both services auto-deploy commits merged to `main`. Add groupmates as GitHub collaborators under **Settings → Collaborators**, or have them contribute with pull requests. Only merged changes reach the shared website. Everyone using the deployed app writes to the same Supabase database; images are shared when Supabase Storage is configured.
+Add groupmates as GitHub collaborators under **Settings → Collaborators**, or have them contribute with pull requests. Only merged changes reach the shared website. Everyone using the deployed app writes to the same Supabase database; images are shared when Supabase Storage is configured.
 
 The free Render services sleep when idle, and the Supabase Free project can pause after inactivity. The first request after a sleep/pause may be delayed while services wake up.
 
