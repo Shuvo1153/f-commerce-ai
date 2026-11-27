@@ -7,7 +7,7 @@ import AiChat from "../components/ai-chat";
 import { CatalogProduct, formatPrice, getProductImage, productPhotos } from "../lib/product-catalog";
 
 const apiUrl = "/api/v1";
-const categoryOrder = ["Electronics", "Shirts", "Pants", "Sneakers", "Perfumes", "Men's Collection", "Women's Collection", "Bags"];
+const categoryOrder = ["Electronics", "Shirts", "Pants", "Sneakers", "Perfumes", "Jewellery Collection", "Men's Collection", "Women's Collection", "Bags"];
 
 type Cart = Record<string, number>;
 

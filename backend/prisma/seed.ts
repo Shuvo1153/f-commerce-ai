@@ -33,6 +33,7 @@ async function main() {
     { name: "Pants", slug: "pants" },
     { name: "Sneakers", slug: "sneakers" },
     { name: "Perfumes", slug: "perfumes" },
+    { name: "Jewellery Collection", slug: "jewellery-collection" },
     { name: "Men's Collection", slug: "mens-collection" },
     { name: "Women's Collection", slug: "dresses" },
     { name: "Bags", slug: "bags" },
