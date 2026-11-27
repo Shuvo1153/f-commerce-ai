@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: f-commerce-api
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: commit
+    dockerCommand: sh -c "npx prisma migrate deploy && npm run start"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: product-images
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: SSLCOMMERZ_STORE_ID
+        sync: false
+      - key: SSLCOMMERZ_STORE_PASSWORD
+        sync: false
+      - key: SSLCOMMERZ_IS_LIVE
+        value: "false"
+      - key: PUBLIC_BACKEND_URL
+        value: https://f-commerce-api.onrender.com
+      - key: FRONTEND_URL
+        value: https://f-commerce-storefront.onrender.com
+
+  - type: web
+    name: f-commerce-storefront
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      - key: BACKEND_URL
+        value: https://f-commerce-api.onrender.com

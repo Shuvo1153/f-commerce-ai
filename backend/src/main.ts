@@ -9,8 +9,9 @@ async function bootstrap() {
   app.setGlobalPrefix("api/v1", {
     exclude: [{ path: "/", method: RequestMethod.GET }],
   });
-  await app.listen(3001);
-  console.log("F-Commerce API listening on http://localhost:3001");
+  const port = Number(process.env.PORT || 3001);
+  await app.listen(port, "0.0.0.0");
+  console.log(`F-Commerce API listening on port ${port}`);
 }
 bootstrap();
 
