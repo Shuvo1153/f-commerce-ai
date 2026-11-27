@@ -8,7 +8,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /api/v1/health
-    autoDeployTrigger: "off"
+    autoDeployTrigger: "commit"
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -35,18 +35,4 @@ services:
       - key: PUBLIC_BACKEND_URL
         value: https://f-commerce-api-w6no.onrender.com
       - key: FRONTEND_URL
-        value: https://f-commerce-storefront.onrender.com
-
-  - type: web
-    name: f-commerce-storefront
-    runtime: docker
-    plan: free
-    region: singapore
-    branch: main
-    dockerfilePath: ./frontend/Dockerfile
-    dockerContext: ./frontend
-    healthCheckPath: /
-    autoDeployTrigger: "off"
-    envVars:
-      - key: BACKEND_URL
-        value: https://f-commerce-api-w6no.onrender.com
+        sync: false
