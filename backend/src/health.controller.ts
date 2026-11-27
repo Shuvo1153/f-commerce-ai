@@ -7,7 +7,7 @@ export class HealthController {
     return {
       status: "ok",
       service: "F-Commerce API",
-      message: "The API is running. Open the storefront at http://localhost:3000.",
+      message: "The F-Commerce API is running.",
     };
   }
 
