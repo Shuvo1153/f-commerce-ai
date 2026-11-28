@@ -84,6 +84,14 @@ function formatDate(value: string) {
 }
 
 async function errorMessage(response: Response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("json")) {
+    if (response.status >= 500) {
+      return "The service is temporarily unavailable. Please wait a moment, then refresh the page.";
+    }
+    return "The server returned an unexpected response. Please refresh the page and try again.";
+  }
+
   const data = await response.json() as { message?: string | string[] };
   return Array.isArray(data.message) ? data.message.join(" ") : data.message || "Something went wrong. Please try again.";
 }
